@@ -19,6 +19,7 @@
         https://glad.dav1d.de/#profile=core&language=c&specification=gl&loader=on&api=gl%3D3.3
 */
 
+
 #ifndef __glad_h_
 #define __glad_h_
 
