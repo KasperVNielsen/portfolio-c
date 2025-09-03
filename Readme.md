@@ -1,18 +1,4 @@
-Go to the GLAD generator: https://glad.dav1d.de/
-
-Language: C
-
-Specification: OpenGL
-
-API: 3.3 Core
-
-Profile: Core
-
-Check: “Generate a loader”
-
-Click Generate, download the zip.
-
-
+if you have minGW 64 bit 
 Go here: https://www.glfw.org/download.html
 
 Under Windows pre-compiled binaries, grab:
@@ -22,6 +8,8 @@ Extract the zip. Inside you’ll see:
 
 include/GLFW/ → headers (glfw3.h, etc.)
 
-lib-mingw-w64 or lib-vc20xx → library files (glfw3.a or .lib)
+you can follow this video if needed
+https://www.youtube.com/watch?v=Y4F0tI7WlDs
 
-glfw3.dll
+compile: gcc src/main.c src/glad.c -Iinclude -Llib -lglfw3dll -lopengl32 -lgdi32 -o pf.exe
+run: ./pf.exe
