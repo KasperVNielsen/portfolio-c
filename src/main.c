@@ -23,7 +23,6 @@ const char* fragmentShaderSource =
 
 int main(void) {
 
-    
     // Init GLFW
     if (!glfwInit()) {
         fprintf(stderr, "Failed to initialize GLFW\n");
@@ -49,8 +48,49 @@ int main(void) {
     }
 
     //vertex shader
+    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader,1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
 
-      // Render loop
+    //check for compiler errors
+    int sucess;
+    char infolog[32];
+
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &sucess);
+    if(!sucess){
+        glGetShaderInfoLog(vertexShader, 512, NULL, infolog);
+        fprintf(stderr, "vertex compiler error: %s\n",infolog);
+    }
+
+    //compile fragment shaders
+    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1 , &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    //check for compiler errors
+    if(!sucess){
+        glGetShaderInfoLog(fragmentShader, 512, NULL, infolog);
+        fprintf(stderr, "fragment compiler error; %s\n", infolog);
+    }
+
+    //link shaders into program
+    unsigned int shaderProgram = glCreateProgram();
+    glad_glAttachShader(shaderProgram, vertexShader);
+    glad_glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    //check for linking error
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &sucess);
+    if(!sucess){
+        glGetProgramInfoLog(shaderProgram, 512, NULL, infolog);
+        fprintf(stderr, "shader linking error; %s\n", infolog);
+    }
+
+    // 4. Clean up shaders (no longer needed after linking)
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+    
+    // Render loop
     while (!glfwWindowShouldClose(window)) {
         // Clear the screen with a white color
         glClearColor(1.0, 1.0, 1.0, 1.0);        
