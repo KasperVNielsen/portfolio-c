@@ -18,7 +18,7 @@ const char* fragmentShaderSource =
 "out vec4 FragColor;\n"
 "void main()\n"
 "{\n"
-"   FragColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
+"   FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
 "}\0";
 
 int main(void) {
@@ -86,16 +86,62 @@ int main(void) {
         fprintf(stderr, "shader linking error; %s\n", infolog);
     }
 
-    // 4. Clean up shaders (no longer needed after linking)
+   //Clean up shaders (no longer needed after linking)
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
-    
+
+
+    // Define square vertices (x, y)
+    float vertices[] = {
+        -0.5f, -0.5f,  
+         0.5f, -0.5f,  
+         0.5f,  0.5f, 
+        -0.5f,  0.5f   
+    };
+
+    //  Define indices for two triangles that make the square
+    unsigned int indices[] = {
+        0,1,2,
+        2,3,0
+    };
+
+    //  Create VAO, VBO, and EBO
+    unsigned int VAO, VBO, EBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
+
+    //bind vao
+    glBindVertexArray(VAO);
+
+    //fill and fill vbo
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    //bind and fill ebo
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+   // Set vertex attribute pointers (connects VBO data to vertex shader "aPos")
+   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+   glEnableVertexAttribArray(0);
+
+   // Unbind VBO (the VAO stores it already)
+   glBindBuffer(GL_ARRAY_BUFFER, 0);
+   // Don't unbind EBO while VAO is active
+
+   glBindVertexArray(0);
+
+
     // Render loop
     while (!glfwWindowShouldClose(window)) {
         // Clear the screen with a white color
-        glClearColor(1.0, 1.0, 1.0, 1.0);        
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        glDisable(GL_BLEND);
+
+        glUseProgram(shaderProgram);
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         
         // Swap buffers and poll input events
@@ -108,5 +154,6 @@ int main(void) {
     glfwTerminate();
     return 0;
 }
+
 
 
