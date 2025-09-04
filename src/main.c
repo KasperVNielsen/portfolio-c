@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include "helpers.h"
+
 
 // Vertex Shader source
 const char* vertexShaderSource =
@@ -86,51 +88,23 @@ int main(void) {
         fprintf(stderr, "shader linking error; %s\n", infolog);
     }
 
-   //Clean up shaders (no longer needed after linking)
+    //Clean up shaders (no longer needed after linking)
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // --- Search bar: top-center ---
+    float sbW = 1.40f;   // try 1.20f..1.60f to taste
+    float sbH = 0.12f;   // bar thickness
+    float sbX = -sbW * 0.5f; // center horizontally
+    float sbY = 0.95f;       // near top (small margin from +1.0)
+    unsigned int searchBarVAO = createRectangle(sbX, sbY, sbW, sbH);
 
-    // Define square vertices (x, y)
-    float vertices[] = {
-        -0.5f, -0.5f,  
-         0.5f, -0.5f,  
-         0.5f,  0.5f, 
-        -0.5f,  0.5f   
-    };
-
-    //  Define indices for two triangles that make the square
-    unsigned int indices[] = {
-        0,1,2,
-        2,3,0
-    };
-
-    //  Create VAO, VBO, and EBO
-    unsigned int VAO, VBO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-
-    //bind vao
-    glBindVertexArray(VAO);
-
-    //fill and fill vbo
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    //bind and fill ebo
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-   // Set vertex attribute pointers (connects VBO data to vertex shader "aPos")
-   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-   glEnableVertexAttribArray(0);
-
-   // Unbind VBO (the VAO stores it already)
-   glBindBuffer(GL_ARRAY_BUFFER, 0);
-   // Don't unbind EBO while VAO is active
-
-   glBindVertexArray(0);
+    // --- Chart area: centered ---
+    float chW = 1.60f;   // width of chart area
+    float chH = 1.20f;   // height of chart area
+    float chX = -chW * 0.5f; // center horizontally
+    float chY =  chH * 0.5f; // center vertically
+    unsigned int chartVAO = createRectangle(chX, chY, chW, chH);
 
 
     // Render loop
@@ -140,20 +114,22 @@ int main(void) {
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
-        glBindVertexArray(VAO);
+
+        // search bar (top)
+        glBindVertexArray(searchBarVAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-        
+        // chart area (middle)
+        glBindVertexArray(chartVAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
         // Swap buffers and poll input events
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-
-
     glfwTerminate();
     return 0;
 }
-
 
 
