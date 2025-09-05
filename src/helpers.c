@@ -1,5 +1,9 @@
 #include <glad/glad.h>
 #include "helpers.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
 
 // Creates a rectangle VAO at (x, y) with width w and height h
 unsigned int createRectangle(float x, float y, float w, float h) {
@@ -38,4 +42,16 @@ unsigned int createRectangle(float x, float y, float w, float h) {
     glBindVertexArray(0);
 
     return VAO;
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) {
+        // maybe submit login or search
+    }
+    if (key == GLFW_KEY_B && action == GLFW_PRESS) {
+        // buy
+    }
+    if (key == GLFW_KEY_S && action == GLFW_PRESS) {
+        // sell
+    }
 }

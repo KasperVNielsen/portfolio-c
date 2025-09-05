@@ -43,6 +43,7 @@ int main(void) {
         return -1;
     }
     glfwMakeContextCurrent(window);
+    glfwSetKeyCallback(window, key_callback);
 
     if (!gladLoadGL()) {
         fprintf(stderr, "Failed to initialize GLAD\n");
@@ -92,18 +93,18 @@ int main(void) {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // --- Search bar: top-center ---
-    float sbW = 1.40f;   // try 1.20f..1.60f to taste
-    float sbH = 0.12f;   // bar thickness
-    float sbX = -sbW * 0.5f; // center horizontally
-    float sbY = 0.95f;       // near top (small margin from +1.0)
+    //Search bar: top-center
+    float sbW = 1.40f; 
+    float sbH = 0.12f; 
+    float sbX = -sbW * 0.5f; 
+    float sbY = 0.95f; 
     unsigned int searchBarVAO = createRectangle(sbX, sbY, sbW, sbH);
 
-    // --- Chart area: centered ---
-    float chW = 1.60f;   // width of chart area
-    float chH = 1.20f;   // height of chart area
-    float chX = -chW * 0.5f; // center horizontally
-    float chY =  chH * 0.5f; // center vertically
+    // Chart area: centered
+    float chW = 1.60f;   
+    float chH = 1.20f;   
+    float chX = -chW * 0.5f; 
+    float chY =  chH * 0.5f; 
     unsigned int chartVAO = createRectangle(chX, chY, chW, chH);
 
 

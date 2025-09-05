@@ -11,5 +11,5 @@ include/GLFW/ → headers (glfw3.h, etc.)
 you can follow this video if needed
 https://www.youtube.com/watch?v=Y4F0tI7WlDs
 
-compile: gcc src/main.c src/glad.c -Iinclude -Llib -lglfw3dll -lopengl32 -lgdi32 -o pf.exe
+compile: gcc src/main.c src/helpers.c src/glad.c -Iinclude -Llib -lglfw3dll -lopengl32 -lgdi32 -o pf.exe
 run: ./pf.exe
