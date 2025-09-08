@@ -4,7 +4,9 @@
 #include <GLFW/glfw3.h>
 #include "helpers.h"
 #include <stdbool.h>
+#include "stb_easy_font/stb_easy_font.h"
 
+#define STB_EASY_FONT_IMPLEMENTATION
 
 int windowWidth = 800;
 int windowHeight = 600;
@@ -39,10 +41,6 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 
 int main(void) {
 
-    bool searchBarActive = false;
-    char searchText[256];
-    int searchLen = 0;
-
     // Init GLFW
     if (!glfwInit()) {
         fprintf(stderr, "Failed to initialize GLFW\n");
@@ -63,6 +61,7 @@ int main(void) {
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetCharCallback(window, char_callback);
 
     if (!gladLoadGL()) {
         fprintf(stderr, "Failed to initialize GLAD\n");
@@ -161,6 +160,21 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
         float ndcX = (2.0f * xpos) / windowWidth - 1.0f;
         float ndcY = 1.0f - (2.0f * ypos) / windowHeight;
 
+        float sbLeft   = -0.7f;
+        float sbRight  =  0.7f;
+        float sbTop    =  0.95f;
+        float sbBottom =  0.83f;
+
+        if (ndcX >= sbLeft && ndcX <= sbRight &&
+            ndcY <= sbTop && ndcY >= sbBottom) {
+            searchBarActive = true;
+            searchLen = 0;
+            searchText[0] = '\0';
+            printf("Search bar activated!\n");
+        } else {
+            searchBarActive = false;
+        }
+
     }
 }
 
@@ -168,5 +182,15 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
     windowWidth = width;
     windowHeight = height;
+}
+
+void char_callback(GLFWwindow* window, unsigned int codepoint) {
+    if (searchBarActive) {
+        if (searchLen < 255) {
+            searchText[searchLen++] = (char)codepoint;
+            searchText[searchLen] = '\0';
+            printf("Search text: %s\n", searchText);
+        }
+    }
 }
 
