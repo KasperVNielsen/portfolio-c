@@ -3,6 +3,15 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "helpers.h"
+#include <stdbool.h>
+
+
+int windowWidth = 800;
+int windowHeight = 600;
+
+bool searchBarActive = false;
+char searchText[256];
+int searchLen = 0;
 
 
 // Vertex Shader source
@@ -23,7 +32,16 @@ const char* fragmentShaderSource =
 "   FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
 "}\0";
 
+// Forward declare callbacks
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
+
+
 int main(void) {
+
+    bool searchBarActive = false;
+    char searchText[256];
+    int searchLen = 0;
 
     // Init GLFW
     if (!glfwInit()) {
@@ -36,14 +54,15 @@ int main(void) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Candlestick Chart", NULL, NULL);
-    if (!window) {
-        fprintf(stderr, "Failed to create window\n");
-        glfwTerminate();
-        return -1;
+    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Candlestick Chart", NULL, NULL);
+        if (!window) {
+            fprintf(stderr, "Failed to create window\n");
+            glfwTerminate();
+            return -1;
     }
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
     if (!gladLoadGL()) {
         fprintf(stderr, "Failed to initialize GLAD\n");
@@ -107,6 +126,7 @@ int main(void) {
     float chY =  chH * 0.5f; 
     unsigned int chartVAO = createRectangle(chX, chY, chW, chH);
 
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
 
     // Render loop
     while (!glfwWindowShouldClose(window)) {
@@ -133,4 +153,20 @@ int main(void) {
     return 0;
 }
 
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+        double xpos, ypos;
+        glfwGetCursorPos(window, &xpos, &ypos);
+
+        float ndcX = (2.0f * xpos) / windowWidth - 1.0f;
+        float ndcY = 1.0f - (2.0f * ypos) / windowHeight;
+
+    }
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    glViewport(0, 0, width, height);
+    windowWidth = width;
+    windowHeight = height;
+}
 
