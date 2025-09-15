@@ -61,6 +61,7 @@ static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 static void mouse_button_callback(GLFWwindow *window, int button, int action, int mods);
 static void key_callback(GLFWwindow *window, int key, int sc, int action, int mods);
 static void char_callback(GLFWwindow *window, unsigned int codepoint);
+static float measureTextWidthRaw(const char *text);
 
 static unsigned int buildShader(const char *vsrc, const char *fsrc);
 static void initTextRendering(void);
@@ -156,6 +157,7 @@ int main(void)
         // Move it to the right and make it bigger:
         if (searchBarActive || searchLen > 0)
         {
+            
             glUseProgram(textShader);
             glUniform2f(glGetUniformLocation(textShader, "uResolution"), (float)windowWidth, (float)windowHeight);
 
@@ -179,19 +181,18 @@ int main(void)
             const char *toShow = (searchLen > 0) ? searchText : "Type to search...";
             renderText(textX, textY, toShow);
 
-            // caret
+            // Blinking caret
             double now = glfwGetTime();
-            static double lastBlink = 0.0;
-            static bool on = true;
-            if (now - lastBlink > 0.5)
+            if (now - blinkLast > 0.5)
             {
-                on = !on;
-                lastBlink = now;
+                blinkOn = !blinkOn;
+                blinkLast = now;
             }
-            if (on)
+            if (blinkOn)
             {
-                float caretX = textX + approxTextWidth((searchLen > 0) ? searchText : "");
-                renderText(caretX, textY, "|");
+                float rawW = measureTextWidthRaw(toShow); // ← exact width in pixels (unscaled)
+                float caretX = textX + rawW;              // ← do NOT multiply by scale
+                renderText(caretX, textY, "|");           // shader scales caret & text the same
             }
         }
 
@@ -405,4 +406,32 @@ static unsigned int buildShader(const char *vsrc, const char *fsrc)
     glDeleteShader(vs);
     glDeleteShader(fs);
     return prog;
+}
+// precise raw pixel width using stb_easy_font geometry (no scaling)
+static float measureTextWidthRaw(const char *text)
+{
+    if (!text || !*text)
+        return 0.0f;
+
+    char buf[100000];
+    int quads = stb_easy_font_print(0, 0, (char *)text, NULL, buf, sizeof(buf));
+    if (quads <= 0)
+        return 0.0f;
+
+    float *v = (float *)buf; // per quad: 16 floats (x,y,s,t for 4 verts)
+    float maxx = 0.0f;
+    for (int i = 0; i < quads; ++i)
+    {
+        float *q = v + i * 16;
+        // x of the 4 vertices
+        if (q[0] > maxx)
+            maxx = q[0];
+        if (q[4] > maxx)
+            maxx = q[4];
+        if (q[8] > maxx)
+            maxx = q[8];
+        if (q[12] > maxx)
+            maxx = q[12];
+    }
+    return maxx; // raw pixel width before shader scaling
 }
