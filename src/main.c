@@ -12,7 +12,7 @@
 
 #include "helpers.h"
 
-// ---------------- Globals ----------------
+//  Globals 
 int windowWidth = 800;
 int windowHeight = 600;
 
@@ -43,12 +43,13 @@ static float cashBalance = 10000.0f;
 
 // Stock tiles + buttons geometry (NDC)
 static unsigned int stockVAO[3];
-static float stockX = -0.75f, stockW = 0.50f, stockH = 0.10f;
-static float stockY[3] = { 0.78f, 0.66f, 0.54f }; // top-left y (NDC) per tile
+static float stockX = -0.75f, stockW = 0.55f, stockH = 0.14f;
+static float stockY[3] = { 0.70f, 0.48f, 0.26f }; // farther apart
 
 static unsigned int buyBtnVAO, sellBtnVAO;
-static float buyX = -0.75f, buyY = 0.40f, buyW = 0.24f, buyH = 0.10f;
-static float sellX = -0.49f, sellY = 0.40f, sellW = 0.24f, sellH = 0.10f;
+static float buyX = -0.75f, buyY = -0.05f, buyW = 0.28f, buyH = 0.10f;
+static float sellX = -0.43f, sellY = -0.05f, sellW = 0.28f, sellH = 0.10f;
+
 
 // Bottom navbar + icons
 static float navX = -1.0f, navY = -0.85f, navW = 2.0f, navH = 0.15f;
@@ -62,7 +63,7 @@ static unsigned int textVAO, textVBO;
 static double blinkLast = 0.0;
 static bool   blinkOn   = true;
 
-// ---------------- Shaders ----------------
+//  Shaders 
 static const char* rectVS = "#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
 "void main(){ gl_Position = vec4(aPos, 1.0); }\n";
@@ -88,7 +89,7 @@ static const char* textFS = "#version 330 core\n"
 "out vec4 FragColor;\n"
 "void main(){ FragColor = vec4(0.0,0.0,0.0,1.0); }\n";
 
-// ---------------- Forwards ----------------
+//  Forwards 
 static void glfwErrorCallback(int code, const char *desc);
 static void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 static void mouse_button_callback(GLFWwindow *window, int button, int action, int mods);
@@ -103,7 +104,7 @@ static unsigned int createTriangle(float x1,float y1,float x2,float y2,float x3,
 static float ndcToPixelX(float ndcX);
 static float ndcToPixelY(float ndcY);
 
-// ---------------- Main -------------------
+//  Main 
 int main(void) {
     if (!glfwInit()) { fprintf(stderr, "Failed to init GLFW\n"); return -1; }
     glfwSetErrorCallback(glfwErrorCallback);
@@ -161,7 +162,7 @@ int main(void) {
     initTextRendering();
     blinkLast = glfwGetTime();
 
-    // ---------- Render loop ----------
+    //  Render loop 
     while (!glfwWindowShouldClose(window)) {
         glClearColor(1,1,1,1);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -227,14 +228,23 @@ int main(void) {
             glUseProgram(textShader);
             glUniform2f(glGetUniformLocation(textShader, "uResolution"), (float)windowWidth, (float)windowHeight);
 
-            // Tiles labels
-            for (int i = 0; i < 3; ++i) {
-                float px = ndcToPixelX(stockX) + 10.0f;
-                float py = ndcToPixelY(stockY[i]) - 8.0f;
-                float scale = 1.4f;
+           // Tiles labels (vertically centered in each tile)
+            for (int i = 0; i < 3; ++i)
+            {
+                float leftPx = ndcToPixelX(stockX) + 12.0f; 
+                float topPx = ndcToPixelY(stockY[i]);
+                float botPx = ndcToPixelY(stockY[i] - stockH);
+                float midPx = 0.5f * (topPx + botPx);
+
+                float px = leftPx;
+                float py = midPx - 2.0f; 
+                float scale = 1.3f;   
+
                 char line[64];
-                snprintf(line, sizeof(line), "%s  $%.2f  x%d", stocks[i].symbol, stocks[i].price, stocks[i].qty);
-                glUniform1f(glGetUniformLocation(textShader, "uScale"),  scale);
+                snprintf(line, sizeof(line), "%s  $%.2f  x%d",
+                         stocks[i].symbol, stocks[i].price, stocks[i].qty);
+
+                glUniform1f(glGetUniformLocation(textShader, "uScale"), scale);
                 glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
                 renderText(px, py, line);
             }
@@ -254,12 +264,17 @@ int main(void) {
                 renderText(px, py, "SELL");
             }
 
-            // Cash
+            // Cash 
             {
-                float px = ndcToPixelX(-0.78f);
-                float py = ndcToPixelY( 0.58f);
-                char cash[64]; snprintf(cash, sizeof(cash), "Cash: $%.2f", cashBalance);
-                glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.4f);
+                float cashNdcY = buyY + 0.14f; // above buttons
+                float centerNdcX = (buyX + (sellX + sellW)) * 0.5f;
+
+                float px = ndcToPixelX(centerNdcX) - 60.0f; // small centering tweak
+                float py = ndcToPixelY(cashNdcY);
+
+                char cash[64];
+                snprintf(cash, sizeof(cash), "Cash: $%.2f", cashBalance);
+                glUniform1f(glGetUniformLocation(textShader, "uScale"), 1.3f);
                 glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
                 renderText(px, py, cash);
             }
@@ -300,7 +315,7 @@ int main(void) {
     return 0;
 }
 
-// ---------------- Callbacks ----------------
+//  Callbacks 
 static void glfwErrorCallback(int code, const char *desc) {
     fprintf(stderr, "GLFW error %d: %s\n", code, desc);
 }
@@ -379,7 +394,7 @@ static void char_callback(GLFWwindow *window, unsigned int codepoint) {
     }
 }
 
-// ---------------- Text Rendering ----------------
+//  Text Rendering 
 static void initTextRendering(void) {
     glGenVertexArrays(1, &textVAO);
     glGenBuffers(1, &textVBO);
@@ -442,7 +457,7 @@ static float measureTextWidthRaw(const char *text) {
     return maxx;
 }
 
-// ---------------- Utilities ----------------
+//  Utilities 
 static unsigned int buildShader(const char *vsrc, const char *fsrc) {
     int ok; char log[1024];
 
