@@ -7,6 +7,9 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include <time.h>   
+#include <math.h>   
+
 #define STB_EASY_FONT_IMPLEMENTATION
 #include "stb_easy_font/stb_easy_font.h"
 
@@ -15,6 +18,10 @@
 //  Globals 
 int windowWidth = 800;
 int windowHeight = 600;
+
+// how often to change prices (seconds)
+static const double PRICE_UPDATE_DT = 1;
+static double lastPriceUpdate = 0.0;
 
 // Tabs
 typedef enum { TAB_HOME = 0, TAB_STOCKS = 1 } Tab;
@@ -95,6 +102,7 @@ static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 static void mouse_button_callback(GLFWwindow *window, int button, int action, int mods);
 static void key_callback(GLFWwindow *window, int key, int sc, int action, int mods);
 static void char_callback(GLFWwindow *window, unsigned int codepoint);
+static void updatePricesRandomWalk(void);
 
 static unsigned int buildShader(const char *vsrc, const char *fsrc);
 static void initTextRendering(void);
@@ -106,6 +114,7 @@ static float ndcToPixelY(float ndcY);
 
 //  Main 
 int main(void) {
+    
     if (!glfwInit()) { fprintf(stderr, "Failed to init GLFW\n"); return -1; }
     glfwSetErrorCallback(glfwErrorCallback);
 
@@ -131,6 +140,8 @@ int main(void) {
     }
     if (!window) { fprintf(stderr, "Failed to create window\n"); glfwTerminate(); return -1; }
 
+    srand((unsigned)time(NULL));
+    lastPriceUpdate = glfwGetTime();
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetMouseButtonCallback(window, mouse_button_callback);
@@ -164,6 +175,12 @@ int main(void) {
 
     //  Render loop 
     while (!glfwWindowShouldClose(window)) {
+        double now = glfwGetTime();
+        if (now - lastPriceUpdate >= PRICE_UPDATE_DT) {
+            updatePricesRandomWalk();
+            lastPriceUpdate = now;
+        }
+
         glClearColor(1,1,1,1);
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -280,7 +297,7 @@ int main(void) {
             }
         }
 
-        // --- Navbar (always visible) ---
+        //  Navbar (always visible) 
         glUseProgram(rectShader);
         glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.80f, 0.80f, 0.80f);
         glBindVertexArray(navBarVAO);  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -505,4 +522,16 @@ static float ndcToPixelX(float ndcX) {
 }
 static float ndcToPixelY(float ndcY) {
     return (1.0f - ndcY) * 0.5f * windowHeight;
+}
+
+// random walk update: ±(0.1%..0.6%) each tick
+static void updatePricesRandomWalk(void) {
+    for (int i = 0; i < 3; ++i) {
+        float p = stocks[i].price;
+        float pct = ((rand() % 11) + 1) / 1000.0f;         
+        int dir = (rand() & 1) ? +1 : -1;
+        float delta = p * pct * dir;
+        p = fmaxf(1.0f, p + delta);   
+        stocks[i].price = p;
+    }
 }
