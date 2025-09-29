@@ -68,13 +68,13 @@ static bool   blinkOn   = true;
 static const double PRICE_UPDATE_DT = 0.25;
 static double lastPriceUpdate = 0.0;
 
-//  Portfolio candlestick series (HOME chart) 
+//  Candlestick series for ONE TRACKED STOCK 
 typedef struct { float open, high, low, close; bool valid; } Candle;
 #define MAX_CANDLES 120
 static Candle candles[MAX_CANDLES];
 static int    candleCount     = 0;
 static int    currentCandle   = -1;
-static const double CANDLE_DT = 1.0;
+static const double CANDLE_DT = 1.0;   // one candle per second
 static double lastCandleTime  = 0.0;
 
 // dynamic buffers for candle geometry
@@ -84,22 +84,25 @@ static unsigned int wickVAO=0, wickVBO=0;             // lines (black wicks)
 static int upVertCount = 0, dnVertCount = 0, wickVertCount = 0; // # of vertices
 
 // Chart area (match your chartVAO rectangle)
-static const float chartLeftNDC = -0.8f;
-static const float chartTopNDC  =  0.60f;
-static const float chartWidthNDC=  1.6f;
-static const float chartHeightNDC= 1.20f; // bottom = top - height => -0.60
+static const float chartLeftNDC  = -0.8f;
+static const float chartTopNDC   =  0.60f;
+static const float chartWidthNDC =  1.6f;
+static const float chartHeightNDC=  1.20f; // bottom = top - height => -0.60
 
-//  Shaders 
-static const char* rectVS = "#version 330 core\n"
+//  Shaders -
+static const char* rectVS =
+"#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
 "void main(){ gl_Position = vec4(aPos, 1.0); }\n";
 
-static const char* rectFS = "#version 330 core\n"
+static const char* rectFS =
+"#version 330 core\n"
 "out vec4 FragColor;\n"
 "uniform vec3 uColor;\n"
 "void main(){ FragColor = vec4(uColor, 1.0); }\n";
 
-static const char* textVS = "#version 330 core\n"
+static const char* textVS =
+"#version 330 core\n"
 "layout (location = 0) in vec2 aPos;\n"
 "uniform vec2  uResolution;\n"
 "uniform vec2  uOrigin;\n"
@@ -111,7 +114,8 @@ static const char* textVS = "#version 330 core\n"
 "  gl_Position = vec4(pos, 0.0, 1.0);\n"
 "}\n";
 
-static const char* textFS = "#version 330 core\n"
+static const char* textFS =
+"#version 330 core\n"
 "out vec4 FragColor;\n"
 "void main(){ FragColor = vec4(0.0,0.0,0.0,1.0); }\n";
 
@@ -131,30 +135,31 @@ static float ndcToPixelX(float ndcX);
 static float ndcToPixelY(float ndcY);
 
 // Candle series helpers
+static void clearCandleSeries(void);
 static void initCandleSeries(float initialValue);
-static void updateCandleSeries(double now, float portfolioValue);
+static void updateCandleSeries(double now, float price);
 static float mapYValue(float val, float vmin, float vmax, float chartBottom, float height) {
     float t = (val - vmin) / (vmax - vmin);
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
     return chartBottom + t * height;
 }
-
 static void rebuildCandleMeshes(void);
 
-// Price updater (kept at bottom by request)
+// Price updater
 static void updatePricesRandomWalk(void);
 
-//  Utils --
-static inline float portfolioHoldingsValue(void) {
-    float v = 0.0f;
-    for (int i = 0; i < 3; ++i) v += stocks[i].qty * stocks[i].price;
-    return v;
+// Choose which stock to track (owned-only)
+static int findTrackedStockIndex(void) {
+    if (stocks[selectedStock].qty > 0) return selectedStock;
+    for (int i = 0; i < 3; ++i) if (stocks[i].qty > 0) return i;
+    return -1;
 }
-static inline float portfolioTotal(void) { return portfolioHoldingsValue() + cashBalance; }
+
+//  Utils 
 static inline float clampf(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
 
-//  Main ---
+//  Main -
 int main(void) {
     if (!glfwInit()) { fprintf(stderr, "Failed to init GLFW\n"); return -1; }
     glfwSetErrorCallback(glfwErrorCallback);
@@ -227,27 +232,44 @@ int main(void) {
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
 
-    // Init prices/candles
+    // Init empty candle series (will start once a stock is owned)
+    clearCandleSeries();
+
+    // RNG & timers
     srand((unsigned)time(NULL));
     lastPriceUpdate = glfwGetTime();
     lastCandleTime  = lastPriceUpdate;
-    initCandleSeries(portfolioTotal());
 
     blinkLast = glfwGetTime();
+    glLineWidth(1.0f);
+    glDisable(GL_DEPTH_TEST); // we're in 2D UI land
 
-    //  Render loop 
+    // - Render loop -
     while (!glfwWindowShouldClose(window)) {
-        // update prices periodically
+        // update prices periodically (simulation)
         double now = glfwGetTime();
         if (now - lastPriceUpdate >= PRICE_UPDATE_DT) {
             updatePricesRandomWalk();
             lastPriceUpdate = now;
         }
-        // update candle series
-        updateCandleSeries(now, portfolioTotal());
-        // rebuild candle meshes for drawing
+
+        // Determine which stock to track (must be owned)
+        int tracked = (stocks[selectedStock].qty > 0) ? selectedStock : findTrackedStockIndex();
+        bool haveTracked = (tracked >= 0);
+
+        // If we have a tracked stock, update candle series from its price
+        if (haveTracked) {
+            if (currentCandle < 0 || candleCount == 0) {
+                initCandleSeries(stocks[tracked].price);
+                lastCandleTime = now;
+            }
+            updateCandleSeries(now, stocks[tracked].price);
+        }
+
+        // rebuild candle meshes for drawing (uses whatever is in candles[])
         rebuildCandleMeshes();
 
+        // - draw -
         glClearColor(1,1,1,1);
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -259,12 +281,11 @@ int main(void) {
             glBindVertexArray(chartVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-            // Draw wicks (black)
+            // Wicks then bodies
             glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.10f, 0.10f, 0.10f);
             glBindVertexArray(wickVAO);
             glDrawArrays(GL_LINES, 0, wickVertCount);
 
-            // Draw bodies: up (green), down (red)
             glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.20f, 0.70f, 0.30f);
             glBindVertexArray(candleUpVAO);
             glDrawArrays(GL_TRIANGLES, 0, upVertCount);
@@ -278,7 +299,7 @@ int main(void) {
             glBindVertexArray(searchBarVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-            // Search text
+            // Search text & caret
             if (searchBarActive || searchLen > 0) {
                 glUseProgram(textShader);
                 glUniform2f(glGetUniformLocation(textShader, "uResolution"),
@@ -304,29 +325,22 @@ int main(void) {
                 }
             }
 
-            // Portfolio labels inside chart (top-left)
-            {
-                glUseProgram(textShader);
-                glUniform2f(glGetUniformLocation(textShader, "uResolution"),
-                            (float)windowWidth, (float)windowHeight);
-                float px = ndcToPixelX(chartLeftNDC) + 10.0f;
-                float py = ndcToPixelY(chartTopNDC)  + 16.0f;
+            // Chart label (top-left)
+            glUseProgram(textShader);
+            glUniform2f(glGetUniformLocation(textShader, "uResolution"),
+                        (float)windowWidth, (float)windowHeight);
+            float px = ndcToPixelX(chartLeftNDC) + 10.0f;
+            float py = ndcToPixelY(chartTopNDC)  + 16.0f;
+            glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.2f);
+            glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
 
-                char line[128];
-                snprintf(line, sizeof(line), "Holdings: $%.2f", portfolioHoldingsValue());
-                glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.2f);
-                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
+            char line[160];
+            if (haveTracked) {
+                snprintf(line, sizeof(line), "Tracking: %s  (qty %d)  Price: $%.2f",
+                         stocks[tracked].symbol, stocks[tracked].qty, stocks[tracked].price);
                 renderText(px, py, line);
-
-                py += 16.0f;
-                snprintf(line, sizeof(line), "Cash: $%.2f", cashBalance);
-                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
-                renderText(px, py, line);
-
-                py += 16.0f;
-                snprintf(line, sizeof(line), "Total: $%.2f", portfolioTotal());
-                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
-                renderText(px, py, line);
+            } else {
+                renderText(px, py, "Own a stock to start the chart (BUY on Stocks tab).");
             }
 
         } else { // TAB_STOCKS
@@ -355,45 +369,45 @@ int main(void) {
                 float topPx  = ndcToPixelY(stockY[i]);
                 float botPx  = ndcToPixelY(stockY[i] - stockH);
                 float midPx  = 0.5f * (topPx + botPx);
-                float px = leftPx, py = midPx - 2.0f;
+                float px2 = leftPx, py2 = midPx - 2.0f;
                 float scale = 1.3f;
-                char line[64];
-                snprintf(line, sizeof(line), "%s  $%.2f  x%d",
+                char line2[64];
+                snprintf(line2, sizeof(line2), "%s  $%.2f  x%d",
                          stocks[i].symbol, stocks[i].price, stocks[i].qty);
                 glUniform1f(glGetUniformLocation(textShader, "uScale"),  scale);
-                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
-                renderText(px, py, line);
+                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px2, py2);
+                renderText(px2, py2, line2);
             }
 
             // Button labels
             {
-                float px = ndcToPixelX(buyX) + 20.0f;
-                float py = ndcToPixelY(buyY) - 10.0f;
+                float px2 = ndcToPixelX(buyX) + 20.0f;
+                float py2 = ndcToPixelY(buyY) - 10.0f;
                 glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.6f);
-                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
-                renderText(px, py, "BUY");
+                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px2, py2);
+                renderText(px2, py2, "BUY");
 
-                px = ndcToPixelX(sellX) + 16.0f;
-                py = ndcToPixelY(sellY) - 10.0f;
+                px2 = ndcToPixelX(sellX) + 16.0f;
+                py2 = ndcToPixelY(sellY) - 10.0f;
                 glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.6f);
-                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
-                renderText(px, py, "SELL");
+                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px2, py2);
+                renderText(px2, py2, "SELL");
             }
 
             // Cash above buttons
             {
                 float cashNdcY = buyY + 0.14f;
                 float centerNdcX = (buyX + (sellX + sellW)) * 0.5f;
-                float px = ndcToPixelX(centerNdcX) - 60.0f;
-                float py = ndcToPixelY(cashNdcY);
+                float px2 = ndcToPixelX(centerNdcX) - 60.0f;
+                float py2 = ndcToPixelY(cashNdcY);
                 char cash[64]; snprintf(cash, sizeof(cash), "Cash: $%.2f", cashBalance);
                 glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.3f);
-                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
-                renderText(px, py, cash);
+                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px2, py2);
+                renderText(px2, py2, cash);
             }
         }
 
-        // --- Navbar (always visible) ---
+        //  Navbar (always visible) 
         glUseProgram(rectShader);
         glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.80f, 0.80f, 0.80f);
         glBindVertexArray(navBarVAO);  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -401,7 +415,7 @@ int main(void) {
         // Icons (dark)
         glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.30f, 0.30f, 0.30f);
         glBindVertexArray(homeBodyVAO);  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(homeRoofVAO); glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(homeRoofVAO);  glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(stockBar1VAO); glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(stockBar2VAO); glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(stockBar3VAO); glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -428,7 +442,7 @@ int main(void) {
     return 0;
 }
 
-// --- Callbacks ----
+// - Callbacks 
 static void glfwErrorCallback(int code, const char *desc) {
     fprintf(stderr, "GLFW error %d: %s\n", code, desc);
 }
@@ -492,13 +506,13 @@ static void key_callback(GLFWwindow *window, int key, int sc, int action, int mo
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE) { glfwSetWindowShouldClose(window, GLFW_TRUE); return; }
     if (key == GLFW_KEY_BACKSPACE && searchBarActive) {
-        if (searchLen > 0) { searchText[--searchLen] = '\0'; }
+        if (searchLen > 0) { searchText[searchLen] = '\0'; }
     }
 }
 
 static void char_callback(GLFWwindow *window, unsigned int codepoint) {
     if (!searchBarActive) return;
-    if (codepoint == 8) { if (searchLen > 0) { searchText[--searchLen] = '\0'; } return; }
+    if (codepoint == 8) { if (searchLen > 0) { searchText[searchLen] = '\0'; } return; }
     if (codepoint >= 32 && codepoint < 127) {
         if (searchLen < (int)sizeof(searchText)-1) {
             searchText[searchLen++] = (char)codepoint;
@@ -507,8 +521,7 @@ static void char_callback(GLFWwindow *window, unsigned int codepoint) {
     }
 }
 
-// ---- Text Rendering 
-static unsigned int textVAO, textVBO;
+//  Text Rendering -
 static void initTextRendering(void) {
     glGenVertexArrays(1, &textVAO);
     glGenBuffers(1, &textVBO);
@@ -568,7 +581,7 @@ static float measureTextWidthRaw(const char *text) {
     return maxx;
 }
 
-// ---- Utilities ----
+//  Utilities 
 static unsigned int buildShader(const char *vsrc, const char *fsrc) {
     int ok; char log[1024];
 
@@ -608,30 +621,40 @@ static unsigned int createTriangle(float x1,float y1,float x2,float y2,float x3,
 static float ndcToPixelX(float ndcX) { return (ndcX + 1.0f) * 0.5f * windowWidth; }
 static float ndcToPixelY(float ndcY) { return (1.0f - ndcY) * 0.5f * windowHeight; }
 
-// --- Candlestick series (HOME) 
+//  Candlestick series (ONE STOCK) 
+static void clearCandleSeries(void) {
+    for (int i = 0; i < MAX_CANDLES; ++i) {
+        candles[i].open = candles[i].high = candles[i].low = candles[i].close = 0.0f;
+        candles[i].valid = false;
+    }
+    currentCandle = -1;
+    candleCount   = 0;
+}
 static void initCandleSeries(float initialValue) {
-    for (int i=0;i<MAX_CANDLES;++i){ candles[i].open=candles[i].high=candles[i].low=candles[i].close=initialValue; candles[i].valid=false; }
+    for (int i=0;i<MAX_CANDLES;++i){
+        candles[i].open=candles[i].high=candles[i].low=candles[i].close=initialValue;
+        candles[i].valid=false;
+    }
     currentCandle = 0;
     candleCount   = 1;
     candles[0].open  = candles[0].high = candles[0].low = candles[0].close = initialValue;
     candles[0].valid = true;
 }
-static void updateCandleSeries(double now, float portfolioValue) {
+static void updateCandleSeries(double now, float price) {
     if (currentCandle < 0) return;
-    // update current candle's H/L/C continuously
-    Candle* c = &candles[currentCandle];
-    if (!c->valid) { c->open = c->high = c->low = c->close = portfolioValue; c->valid = true; }
-    c->close = portfolioValue;
-    if (portfolioValue > c->high) c->high = portfolioValue;
-    if (portfolioValue < c->low ) c->low  = portfolioValue;
 
-    // time to start a new candle?
+    Candle* c = &candles[currentCandle];
+    if (!c->valid) { c->open = c->high = c->low = c->close = price; c->valid = true; }
+    c->close = price;
+    if (price > c->high) c->high = price;
+    if (price < c->low ) c->low  = price;
+
     if (now - lastCandleTime >= CANDLE_DT) {
         lastCandleTime = now;
         int next = (currentCandle + 1) % MAX_CANDLES;
         Candle* n = &candles[next];
-        n->open = c->close;
-        n->high = n->low = n->close = n->open;
+        n->open  = c->close;
+        n->high  = n->low = n->close = n->open;
         n->valid = true;
         currentCandle = next;
         if (candleCount < MAX_CANDLES) candleCount++;
@@ -653,54 +676,63 @@ static void rebuildCandleMeshes(void) {
         if (c.low  < vmin) vmin = c.low;
         if (c.high > vmax) vmax = c.high;
     }
-    if (vmax <= vmin) { vmax = vmin + 1.0f; } // avoid /0
+    if (vmax <= vmin) { vmax = vmin + 1.0f; }
     float pad = 0.05f * (vmax - vmin);
     vmin -= pad; vmax += pad;
 
     // x layout
-    float left = chartLeftNDC;
-    float top  = chartTopNDC;
-    float width = chartWidthNDC, height = chartHeightNDC; // chartBottom = top - height
-    float step = width / (float)MAX_CANDLES;
-    float bodyW = step * 0.6f;
+    const float left   = chartLeftNDC;
+    const float top    = chartTopNDC;
+    const float width  = chartWidthNDC;
+    const float height = chartHeightNDC;
+    const float step   = width / (float)MAX_CANDLES;
 
-    // temp vectors (worst-case)
-    // up: 6 verts per candle body; dn: 6; wick: 2
-    int maxUpVerts = count * 6, maxDnVerts = count * 6, maxWickVerts = count * 2;
+    // Candle body width
+    const float bodyW = step * 0.20f;
+
+    // Minimum body height in pixels
+    const float minBodyPx = 2.0f;
+    const float minBodyNDC = (minBodyPx * 2.0f) / (float)windowHeight;
+
+    // buffers (counts measured in *vertices*)
+    int maxUpVerts   = count * 6; // 2 triangles
+    int maxDnVerts   = count * 6;
+    int maxWickVerts = count * 2; // 2 vertices per wick (line)
+
     float* up  = (float*)malloc(sizeof(float)*3*maxUpVerts);
     float* dn  = (float*)malloc(sizeof(float)*3*maxDnVerts);
     float* wck = (float*)malloc(sizeof(float)*3*maxWickVerts);
-    int upV=0, dnV=0, wkV=0;
+    if(!up||!dn||!wck){ free(up); free(dn); free(wck); upVertCount=dnVertCount=wickVertCount=0; return; }
 
-    float chartBottom = top - height;
+    int upV=0, dnV=0;         // vertex counts (not floats)
+    int wkV=0;                // vertex count for wicks
+    const float chartBottom = top - height;
 
     for (int i = 0; i < count; ++i) {
         int idx = (first + i) % MAX_CANDLES;
         if (!candles[idx].valid) continue;
         Candle c = candles[idx];
 
-        // map value -> NDC Y
-       float yOpen  = mapYValue(c.open,  vmin, vmax, chartBottom, height);
-       float yClose = mapYValue(c.close, vmin, vmax, chartBottom, height);
-       float yHigh  = mapYValue(c.high,  vmin, vmax, chartBottom, height);
-       float yLow   = mapYValue(c.low,   vmin, vmax, chartBottom, height);
+        float yOpen  = mapYValue(c.open,  vmin, vmax, chartBottom, height);
+        float yClose = mapYValue(c.close, vmin, vmax, chartBottom, height);
+        float yHigh  = mapYValue(c.high,  vmin, vmax, chartBottom, height);
+        float yLow   = mapYValue(c.low,   vmin, vmax, chartBottom, height);
 
         float xCenter = left + (float)i * step + step * 0.5f;
         float x0 = xCenter - bodyW * 0.5f;
         float x1 = xCenter + bodyW * 0.5f;
 
-        // body z slightly above bg
         float zBody = -0.25f;
         float zWick = -0.20f;
 
-        // wick: vertical line
-        // (xCenter, yLow) -> (xCenter, yHigh)
-        wck[wkV++] = xCenter; wck[wkV++] = yLow;  wck[wkV++] = zWick;
-        wck[wkV++] = xCenter; wck[wkV++] = yHigh; wck[wkV++] = zWick;
+        // wick (2 vertices)
+        wck[wkV*3 + 0] = xCenter; wck[wkV*3 + 1] = yLow;  wck[wkV*3 + 2] = zWick; wkV++;
+        wck[wkV*3 + 0] = xCenter; wck[wkV*3 + 1] = yHigh; wck[wkV*3 + 2] = zWick; wkV++;
 
-        // body as 2 triangles
+        // body rect as 2 triangles (6 vertices)
         float yB = fminf(yOpen, yClose);
         float yT = fmaxf(yOpen, yClose);
+        if ((yT - yB) < minBodyNDC) { float mid=0.5f*(yT+yB); yB=mid-0.5f*minBodyNDC; yT=mid+0.5f*minBodyNDC; }
 
         float tri[18] = {
             x0,yB,zBody,  x1,yB,zBody,  x1,yT,zBody,
@@ -708,33 +740,30 @@ static void rebuildCandleMeshes(void) {
         };
 
         bool upCandle = (c.close >= c.open);
-        if (upCandle) {
-            memcpy(up + upV, tri, sizeof(tri)); upV += 18/3;
-        } else {
-            memcpy(dn + dnV, tri, sizeof(tri)); dnV += 18/3;
-        }
+        if (upCandle) { memcpy(up + upV*3, tri, sizeof(tri)); upV += 6; }
+        else          { memcpy(dn + dnV*3, tri, sizeof(tri)); dnV += 6; }
     }
 
     // upload
     glBindVertexArray(candleUpVAO);
     glBindBuffer(GL_ARRAY_BUFFER, candleUpVBO);
-    glBufferData(GL_ARRAY_BUFFER, upV * 3 * sizeof(float), up, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, (size_t)upV * 3 * sizeof(float), up, GL_DYNAMIC_DRAW);
     upVertCount = upV;
 
     glBindVertexArray(candleDnVAO);
     glBindBuffer(GL_ARRAY_BUFFER, candleDnVBO);
-    glBufferData(GL_ARRAY_BUFFER, dnV * 3 * sizeof(float), dn, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, (size_t)dnV * 3 * sizeof(float), dn, GL_DYNAMIC_DRAW);
     dnVertCount = dnV;
 
     glBindVertexArray(wickVAO);
     glBindBuffer(GL_ARRAY_BUFFER, wickVBO);
-    glBufferData(GL_ARRAY_BUFFER, wkV * 3 * sizeof(float), wck, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, (size_t)wkV * 3 * sizeof(float), wck, GL_DYNAMIC_DRAW);
     wickVertCount = wkV;
 
     free(up); free(dn); free(wck);
 }
 
-// --- Price simulation (bottom of file) ---
+//  Price simulation 
 static void updatePricesRandomWalk(void) {
     for (int i = 0; i < 3; ++i) {
         float p = stocks[i].price;
