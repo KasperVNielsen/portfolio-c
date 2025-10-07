@@ -58,6 +58,26 @@ static const float navX = -1.0f, navY = -0.85f, navW = 2.0f, navH = 0.15f;
 static unsigned int homeBodyVAO=0, homeRoofVAO=0;
 static unsigned int stockBar1VAO=0, stockBar2VAO=0, stockBar3VAO=0;
 
+// Active-tab underline (left/right halves)
+static unsigned int navActiveLeftVAO = 0, navActiveRightVAO = 0;
+
+// NEW: Center "Add Balance" navbar button
+static unsigned int navAddBtnVAO = 0;
+static const float addBtnX = -0.20f, addBtnY = -0.86f, addBtnW = 0.40f, addBtnH = 0.10f;
+
+// NEW: Add-Balance modal UI
+static bool addModalOpen = false;
+static bool addInputActive = false;
+static char addInputText[64] = {0};
+static int  addInputLen = 0;
+static unsigned int addPanelVAO = 0, addInputVAO = 0, addConfirmBtnVAO = 0;
+// panel rect: centered box
+static const float panelX = -0.40f, panelY = 0.30f, panelW = 0.80f, panelH = 0.60f;
+// input rect inside panel
+static const float inX = -0.30f, inY = 0.15f, inW = 0.60f, inH = 0.10f;
+// confirm button inside panel
+static const float confX = -0.10f, confY = -0.05f, confW = 0.20f, confH = 0.12f;
+
 static unsigned int textVAO=0, textVBO=0;
 
 static double blinkLast = 0.0;
@@ -151,6 +171,10 @@ static inline bool hasAnyPosition(void) {
     for (int i = 0; i < 3; ++i) if (stocks[i].qty > 0) return true;
     return false;
 }
+// Equity = cash + live holdings
+static inline float portfolioEquity(void) {
+    return cashBalance + portfolioHoldingsValue();
+}
 
 int main(void) {
     if (!glfwInit()) { fprintf(stderr, "Failed to init GLFW\n"); return -1; }
@@ -202,6 +226,18 @@ int main(void) {
     stockBar1VAO = createRectangle( 0.62f, -0.90f, 0.05f, 0.05f);
     stockBar2VAO = createRectangle( 0.69f, -0.90f, 0.05f, 0.08f);
     stockBar3VAO = createRectangle( 0.76f, -0.90f, 0.05f, 0.12f);
+
+    // Active-tab underline strips
+    navActiveLeftVAO  = createRectangle(-1.0f, navY, 1.0f, 0.02f);
+    navActiveRightVAO = createRectangle( 0.0f, navY, 1.0f, 0.02f);
+
+    // NEW: Center navbar "Add Balance" button
+    navAddBtnVAO = createRectangle(addBtnX, addBtnY, addBtnW, addBtnH);
+
+    // NEW: Modal UI elements
+    addPanelVAO      = createRectangle(panelX, panelY, panelW, panelH);
+    addInputVAO      = createRectangle(inX,    inY,    inW,    inH);
+    addConfirmBtnVAO = createRectangle(confX,  confY,  confW,  confH);
 
     initTextRendering();
 
@@ -345,7 +381,7 @@ int main(void) {
             renderText(px, py, line);
 
             py += 16.0f;
-            snprintf(line, sizeof(line), "Total Return: $%.2f", realizedPnL + (portfolioHoldingsValue() - portfolioInvested()));
+            snprintf(line, sizeof(line), "Total Return: $%.2f", portfolioTotalReturn());
             glUniform2f(glGetUniformLocation(textShader, "uOrigin"), px, py);
             renderText(px, py, line);
             glUseProgram(rectShader);
@@ -408,9 +444,11 @@ int main(void) {
             }
         }
 
+        // NAVBAR BACKGROUND
         glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.80f, 0.80f, 0.80f);
         glBindVertexArray(navBarVAO);  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
+        // NAVBAR ICONS
         glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.30f, 0.30f, 0.30f);
         glBindVertexArray(homeBodyVAO);  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(homeRoofVAO);  glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -418,10 +456,22 @@ int main(void) {
         glBindVertexArray(stockBar2VAO); glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(stockBar3VAO); glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
+        // Active tab underline
+        glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.20f, 0.45f, 0.85f);
+        if (currentTab == TAB_HOME) glBindVertexArray(navActiveLeftVAO);
+        else                        glBindVertexArray(navActiveRightVAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        // NEW: Center "Add Balance" button on navbar
+        glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.35f, 0.65f, 0.95f);
+        glBindVertexArray(navAddBtnVAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        // NAVBAR TEXT (labels + balance + add balance text)
         glUseProgram(textShader);
         glUniform2f(glGetUniformLocation(textShader, "uResolution"), (float)windowWidth, (float)windowHeight);
-        glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.2f);
 
+        glUniform1f(glGetUniformLocation(textShader, "uScale"),  1.2f);
         float npx = ndcToPixelX(-0.82f), npy = ndcToPixelY(-0.86f) + 12.0f;
         glUniform2f(glGetUniformLocation(textShader, "uOrigin"), npx, npy);
         renderText(npx, npy, "Home");
@@ -429,6 +479,88 @@ int main(void) {
         npx = ndcToPixelX(0.62f); npy = ndcToPixelY(-0.86f) + 12.0f;
         glUniform2f(glGetUniformLocation(textShader, "uOrigin"), npx, npy);
         renderText(npx, npy, "Stocks");
+
+        // Add Balance text (center button)
+        {
+            float scale = 1.2f;
+            float xPx = ndcToPixelX(addBtnX) + 12.0f;
+            float yPx = ndcToPixelY(addBtnY) + 12.0f;
+            glUniform1f(glGetUniformLocation(textShader, "uScale"),  scale);
+            glUniform2f(glGetUniformLocation(textShader, "uOrigin"), xPx, yPx);
+            renderText(xPx, yPx, "Add Balance");
+        }
+
+        
+
+        glUseProgram(rectShader);
+
+        // NEW: Add Balance Modal
+        if (addModalOpen) {
+            // Panel
+            glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.94f, 0.94f, 0.96f);
+            glBindVertexArray(addPanelVAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+            // Input box
+            glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.85f, 0.85f, 0.85f);
+            glBindVertexArray(addInputVAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+            // Confirm button
+            glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.40f, 0.80f, 0.50f);
+            glBindVertexArray(addConfirmBtnVAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+            // Text on modal
+            glUseProgram(textShader);
+            glUniform2f(glGetUniformLocation(textShader, "uResolution"), (float)windowWidth, (float)windowHeight);
+
+            // Title
+            float tScale = 1.6f;
+            float tx = ndcToPixelX(panelX) + 20.0f;
+            float ty = ndcToPixelY(panelY) - 28.0f;
+            glUniform1f(glGetUniformLocation(textShader, "uScale"),  tScale);
+            glUniform2f(glGetUniformLocation(textShader, "uOrigin"), tx, ty);
+            renderText(tx, ty, "Add Balance");
+
+            // Label
+            float lScale = 1.2f;
+            float lx = ndcToPixelX(inX);
+            float ly = ndcToPixelY(inY) - 14.0f;
+            glUniform1f(glGetUniformLocation(textShader, "uScale"),  lScale);
+            glUniform2f(glGetUniformLocation(textShader, "uOrigin"), lx, ly);
+            renderText(lx, ly, "Amount (e.g. 250.00):");
+
+            // Input text or placeholder
+            {
+                float scale = 1.4f;
+                float ix = ndcToPixelX(inX) + 10.0f;
+                float iy = ndcToPixelY(inY) + (ndcToPixelY(inY - inH) - ndcToPixelY(inY)) * 0.5f - 6.0f;
+                glUniform1f(glGetUniformLocation(textShader, "uScale"),  scale);
+                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), ix, iy);
+                const char* toShow = (addInputLen > 0) ? addInputText : "0.00";
+                renderText(ix, iy, toShow);
+
+                double n2 = glfwGetTime();
+                if (n2 - blinkLast > 0.5) { blinkOn = !blinkOn; blinkLast = n2; }
+                if (addInputActive && blinkOn) {
+                    float rawW = measureTextWidthRaw(toShow) * scale;
+                    renderText(ix + rawW, iy, "|");
+                }
+            }
+
+            // Confirm button text
+            {
+                float scale = 1.3f;
+                float bx = ndcToPixelX(confX) + 10.0f;
+                float by = ndcToPixelY(confY) + 14.0f;
+                glUniform1f(glGetUniformLocation(textShader, "uScale"),  scale);
+                glUniform2f(glGetUniformLocation(textShader, "uOrigin"), bx, by);
+                renderText(bx, by, "Add Balance");
+            }
+
+            glUseProgram(rectShader);
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -449,6 +581,25 @@ static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
     windowWidth  = width;
     windowHeight = height;
 }
+
+static bool pointInRectNDC(float x, float y, float rx, float ry, float rw, float rh) {
+    return (x >= rx && x <= rx+rw && y <= ry && y >= ry-rh);
+}
+
+static void submitAddBalance(void) {
+    // Parse the input as float and add to cash
+    if (addInputLen > 0) {
+        float amt = (float)atof(addInputText);
+        if (amt > 0.0f && isfinite(amt)) {
+            cashBalance += amt;
+        }
+    }
+    addModalOpen = false;
+    addInputActive = false;
+    addInputLen = 0;
+    addInputText[0] = '\0';
+}
+
 static void mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
     if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS) return;
 
@@ -456,7 +607,37 @@ static void mouse_button_callback(GLFWwindow *window, int button, int action, in
     float ndcX = (float)((2.0 * xp) / windowWidth - 1.0);
     float ndcY = (float)(1.0 - (2.0 * yp) / windowHeight);
 
+    // If modal is open: handle modal interactions first
+    if (addModalOpen) {
+        // Click confirm button
+        if (pointInRectNDC(ndcX, ndcY, confX, confY, confW, confH)) {
+            submitAddBalance();
+            return;
+        }
+        // Click input box
+        if (pointInRectNDC(ndcX, ndcY, inX, inY, inW, inH)) {
+            addInputActive = true;
+            return;
+        }
+        // Click outside panel closes modal
+        if (!pointInRectNDC(ndcX, ndcY, panelX, panelY, panelW, panelH)) {
+            addModalOpen = false;
+            addInputActive = false;
+            return;
+        }
+        // Click inside panel but not on input/confirm: keep focus state
+        return;
+    }
+
+    // Navbar interactions
     if (ndcY <= navY && ndcY >= navY - navH) {
+        // Click on center "Add Balance" button?
+        if (pointInRectNDC(ndcX, ndcY, addBtnX, addBtnY, addBtnW, addBtnH)) {
+            addModalOpen = true;
+            addInputActive = true;
+            return;
+        }
+        // Otherwise, switch tab by halves
         currentTab = (ndcX < 0.0f) ? TAB_HOME : TAB_STOCKS;
         if (currentTab != TAB_HOME) searchBarActive = false;
         return;
@@ -509,14 +690,57 @@ static void mouse_button_callback(GLFWwindow *window, int button, int action, in
         }
     }
 }
+
 static void key_callback(GLFWwindow *window, int key, int sc, int action, int mods) {
     if (action != GLFW_PRESS) return;
-    if (key == GLFW_KEY_ESCAPE) { glfwSetWindowShouldClose(window, GLFW_TRUE); return; }
-    if (key == GLFW_KEY_BACKSPACE && searchBarActive) {
-        if (searchLen > 0) { searchText[--searchLen] = '\0'; }
+
+    if (key == GLFW_KEY_ESCAPE) {
+        if (addModalOpen) {
+            addModalOpen = false;
+            addInputActive = false;
+            return;
+        }
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+        return;
+    }
+
+    if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+        if (addModalOpen) {
+            submitAddBalance();
+            return;
+        }
+    }
+
+    if (key == GLFW_KEY_BACKSPACE) {
+        if (addModalOpen && addInputActive) {
+            if (addInputLen > 0) { addInputText[--addInputLen] = '\0'; }
+            return;
+        }
+        if (searchBarActive) {
+            if (searchLen > 0) { searchText[--searchLen] = '\0'; }
+            return;
+        }
     }
 }
+
 static void char_callback(GLFWwindow *window, unsigned int codepoint) {
+    // Numeric input for Add Balance modal
+    if (addModalOpen && addInputActive) {
+        if (codepoint == 8) { if (addInputLen > 0) { addInputText[--addInputLen] = '\0'; } return; }
+        if ((codepoint >= '0' && codepoint <= '9') || codepoint == '.') {
+            // allow only a single '.'
+            if (codepoint == '.') {
+                for (int i = 0; i < addInputLen; ++i) if (addInputText[i] == '.') return;
+            }
+            if (addInputLen < (int)sizeof(addInputText)-1) {
+                addInputText[addInputLen++] = (char)codepoint;
+                addInputText[addInputLen] = '\0';
+            }
+        }
+        return;
+    }
+
+    // Search bar typing
     if (!searchBarActive) return;
     if (codepoint == 8) { if (searchLen > 0) { searchText[--searchLen] = '\0'; } return; }
     if (codepoint >= 32 && codepoint < 127) {
@@ -648,16 +872,15 @@ static void rebuildCandleMeshes(void) {
     const float top    = chartTopNDC;
     const float width  = chartWidthNDC;
     const float height = chartHeightNDC;
-    const float step   = width / (float)count;       
+    const float step   = width / (float)count;
 
     const float minBodyPx  = 2.0f;
     const float minBodyNDC = (minBodyPx * 2.0f) / (float)windowHeight;
 
-    const float fill = 0.55f;                     
+    const float fill = 0.55f;
     float bodyW = step * fill;
     if (bodyW < minBodyNDC)  bodyW = minBodyNDC;
     if (bodyW > step * 0.95f) bodyW = step * 0.95f;
-
 
     int maxUpVerts   = count * 6;
     int maxDnVerts   = count * 6;
