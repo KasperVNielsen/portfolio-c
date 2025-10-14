@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <ctype.h> // <-- added
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -104,6 +105,12 @@ static const float chartTopNDC    =  0.60f;
 static const float chartWidthNDC  =  1.6f;
 static const float chartHeightNDC =  1.20f;
 
+// --- Search results (rendered on Home under the search bar) ---
+static unsigned int searchResVAO[3] = {0,0,0};
+static const float resX = -0.70f, resW = 1.40f, resH = 0.12f;
+static const float resYBase = 0.80f;   // first row starts just under the search bar
+static const float resYStep = 0.14f;   // spacing between rows
+
 static const char* rectVS =
 "#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
@@ -176,6 +183,34 @@ static inline float portfolioEquity(void) {
     return cashBalance + portfolioHoldingsValue();
 }
 
+// -------- Search helpers --------
+static bool icontains(const char* hay, const char* needle) {
+    if (!hay || !needle || !*needle) return false;
+    size_t nlen = strlen(needle);
+    size_t hlen = strlen(hay);
+    for (size_t i = 0; i + nlen <= hlen; ++i) {
+        bool ok = true;
+        for (size_t j = 0; j < nlen; ++j) {
+            char a = (char)toupper((unsigned char)hay[i+j]);
+            char b = (char)toupper((unsigned char)needle[j]);
+            if (a != b) { ok = false; break; }
+        }
+        if (ok) return true;
+    }
+    return false;
+}
+// Fill outIdx with indices of matching stocks; returns match count (0..3)
+static int computeSearchMatches(int* outIdx /* size >= 3 */) {
+    int m = 0;
+    if (searchLen == 0) return 0;
+    for (int i = 0; i < 3; ++i) {
+        if (icontains(stocks[i].symbol, searchText)) {
+            outIdx[m++] = i;
+        }
+    }
+    return m;
+}
+
 int main(void) {
     if (!glfwInit()) { fprintf(stderr, "Failed to init GLFW\n"); return -1; }
     glfwSetErrorCallback(glfwErrorCallback);
@@ -215,6 +250,12 @@ int main(void) {
 
     searchBarVAO = createRectangle(-0.7f, 0.95f, 1.4f, 0.12f);
     chartVAO     = createRectangle(chartLeftNDC, chartTopNDC, chartWidthNDC, chartHeightNDC);
+
+    // Prebuild up to 3 result rows below the search bar (Y descends in NDC)
+    for (int i = 0; i < 3; ++i) {
+        float y = resYBase - i * resYStep;
+        searchResVAO[i] = createRectangle(resX, y, resW, resH);
+    }
 
     for (int i = 0; i < 3; ++i) stockVAO[i] = createRectangle(stockX, stockY[i], stockW, stockH);
     buyBtnVAO  = createRectangle(buyX,  buyY,  buyW,  buyH);
@@ -318,10 +359,12 @@ int main(void) {
                 glUseProgram(rectShader);
             }
 
+            // Search bar background
             glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.65f, 0.65f, 0.65f);
             glBindVertexArray(searchBarVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
+            // Search text + caret
             if (searchBarActive || searchLen > 0) {
                 glUseProgram(textShader);
                 glUniform2f(glGetUniformLocation(textShader, "uResolution"),
@@ -348,6 +391,52 @@ int main(void) {
                 glUseProgram(rectShader);
             }
 
+            // Render search results under the search bar
+            if (searchLen > 0) {
+                int idx[3]; int count = computeSearchMatches(idx);
+
+                for (int i = 0; i < count && i < 3; ++i) {
+                    // Row background
+                    glUniform3f(glGetUniformLocation(rectShader, "uColor"), 0.92f, 0.92f, 0.95f);
+                    glBindVertexArray(searchResVAO[i]);
+                    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+                    // Row text: SYMBOL  $price  xqty  avg $avgCost
+                    glUseProgram(textShader);
+                    glUniform2f(glGetUniformLocation(textShader, "uResolution"),
+                                (float)windowWidth, (float)windowHeight);
+                    float topPx  = ndcToPixelY(resYBase - i*resYStep);
+                    float botPx  = ndcToPixelY((resYBase - i*resYStep) - resH);
+                    float midPx  = 0.5f * (topPx + botPx);
+
+                    float tx = ndcToPixelX(resX) + 12.0f;
+                    float ty = midPx - 2.0f;
+                    glUniform1f(glGetUniformLocation(textShader, "uScale"), 1.3f);
+                    glUniform2f(glGetUniformLocation(textShader, "uOrigin"), tx, ty);
+
+                    char line2[128];
+                    int s = idx[i];
+                    snprintf(line2, sizeof(line2), "%s  $%.2f  x%d  avg $%.2f",
+                             stocks[s].symbol, stocks[s].price, stocks[s].qty, stocks[s].avgCost);
+                    renderText(tx, ty, line2);
+                    glUseProgram(rectShader);
+                }
+
+                // No matches message
+                if (count == 0) {
+                    glUseProgram(textShader);
+                    glUniform2f(glGetUniformLocation(textShader, "uResolution"),
+                                (float)windowWidth, (float)windowHeight);
+                    float tx = ndcToPixelX(resX) + 12.0f;
+                    float ty = ndcToPixelY(resYBase) + 14.0f;
+                    glUniform1f(glGetUniformLocation(textShader, "uScale"), 1.0f);
+                    glUniform2f(glGetUniformLocation(textShader, "uOrigin"), tx, ty);
+                    renderText(tx, ty, "No matching stocks");
+                    glUseProgram(rectShader);
+                }
+            }
+
+            // Portfolio stats on Home
             glUseProgram(textShader);
             glUniform2f(glGetUniformLocation(textShader, "uResolution"),
                         (float)windowWidth, (float)windowHeight);
@@ -489,8 +578,6 @@ int main(void) {
             glUniform2f(glGetUniformLocation(textShader, "uOrigin"), xPx, yPx);
             renderText(xPx, yPx, "Add Balance");
         }
-
-        
 
         glUseProgram(rectShader);
 
@@ -644,10 +731,27 @@ static void mouse_button_callback(GLFWwindow *window, int button, int action, in
     }
 
     if (currentTab == TAB_HOME) {
+        // Click inside search bar focuses it
         if (ndcX >= -0.7f && ndcX <=  0.7f && ndcY <= 0.95f && ndcY >= 0.83f) {
             searchBarActive = true;
             return;
         }
+
+        // If there is search text, allow clicking on result rows to select
+        if (searchLen > 0) {
+            int idx[3]; int count = computeSearchMatches(idx);
+            for (int i = 0; i < count && i < 3; ++i) {
+                float y = resYBase - i * resYStep;
+                if (pointInRectNDC(ndcX, ndcY, resX, y, resW, resH)) {
+                    selectedStock = idx[i];
+                    currentTab = TAB_STOCKS;      // jump to Stocks tab
+                    searchBarActive = false;      // blur search
+                    return;
+                }
+            }
+        }
+
+        // Clicked elsewhere on Home
         searchBarActive = false;
         return;
     }
