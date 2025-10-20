@@ -947,6 +947,7 @@ static void updateCandleSeries(double now, float v) {
         if (candleCount < MAX_CANDLES) candleCount++;
     }
 }
+
 static float mapYValue(float val, float vmin, float vmax, float chartBottom, float height) {
     float t = (val - vmin) / (vmax - vmin);
     if (t < 0.0f) t = 0.0f;
